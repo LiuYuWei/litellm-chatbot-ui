@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# 建置產物
+backend/static/
+frontend/dist/
+
+# 環境設定（含金鑰，切勿提交）
+.env
+.env.local
+*.local
+
+# 編輯器與系統檔
+.vscode/
+.idea/
+.DS_Store
+*.log
