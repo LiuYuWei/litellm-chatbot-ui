@@ -72,7 +72,10 @@ export default function LoginPage({ theme, onToggleTheme }: LoginPageProps) {
           </ul>
         </div>
 
-        <p className="relative text-sm text-white/60">Powered by FastAPI · React · LiteLLM</p>
+        <div className="relative text-sm text-white/60">
+          <p className="font-medium text-white/80">由 Simon Liu 所製作</p>
+          <p className="mt-1">Powered by FastAPI · React · LiteLLM</p>
+        </div>
       </aside>
 
       {/* 右側登入表單 */}
@@ -180,6 +183,10 @@ export default function LoginPage({ theme, onToggleTheme }: LoginPageProps) {
               )}
             </button>
           </form>
+
+          <p className="mt-8 text-center text-xs text-slate-400 lg:hidden dark:text-slate-500">
+            由 Simon Liu 所製作
+          </p>
         </div>
       </main>
     </div>

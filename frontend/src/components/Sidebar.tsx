@@ -152,6 +152,10 @@ export default function Sidebar({
               <LogOut className="h-4 w-4" />
             </button>
           </div>
+
+          <p className="mt-2.5 text-center text-xs text-slate-400 dark:text-slate-500">
+            由 Simon Liu 所製作
+          </p>
         </div>
       </aside>
     </>
