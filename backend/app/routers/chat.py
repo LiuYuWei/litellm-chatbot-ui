@@ -1,4 +1,4 @@
-"""對話端點：把請求轉發給 LiteLLM，並以 SSE 串流回傳。"""
+"""對話端點：依模型所屬來源轉發請求，並以 SSE 串流回傳。"""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from ..auth import get_current_user
-from ..config import Settings, get_settings
-from ..litellm_client import LiteLLMClient, LiteLLMError
+from ..config import ProviderConfig, Settings, get_settings
+from ..llm_client import ClientRegistry, LLMClient, LLMError
 from ..schemas import ChatRequest
 
 logger = logging.getLogger(__name__)
@@ -23,13 +23,37 @@ SSE_HEADERS = {
 }
 
 
-def _resolve_model(requested: str | None, settings: Settings) -> str:
-    """決定實際使用的模型，並確認未超出白名單。"""
-    allowlist = settings.model_allowlist
-    model = (requested or settings.default_model).strip()
-    if allowlist and model not in allowlist:
-        raise HTTPException(status_code=400, detail=f"不允許使用模型「{model}」。")
-    return model
+def _resolve_target(
+    body: ChatRequest, settings: Settings
+) -> tuple[ProviderConfig, str]:
+    """決定要用哪個來源、哪個原生模型名稱，並確認未超出白名單。"""
+    requested = (body.model or settings.default_model).strip()
+
+    if body.provider:
+        # 明確指定來源時以它為準，model 若帶前綴則剝掉。
+        provider = settings.provider_map.get(body.provider)
+        if provider is None:
+            raise HTTPException(
+                status_code=400, detail=f"未知的模型來源「{body.provider}」。"
+            )
+        prefix = f"{provider.id}/"
+        model = requested[len(prefix):] if requested.startswith(prefix) else requested
+    else:
+        provider, model = settings.split_model(requested)
+
+    if not model:
+        raise HTTPException(status_code=400, detail="未指定模型。")
+
+    qualified = provider.qualify(model)
+    if provider.allowed_models and model not in provider.allowed_models:
+        raise HTTPException(
+            status_code=400, detail=f"來源「{provider.label}」不允許使用模型「{model}」。"
+        )
+    global_allow = settings.model_allowlist
+    if global_allow and model not in global_allow and qualified not in global_allow:
+        raise HTTPException(status_code=400, detail=f"不允許使用模型「{qualified}」。")
+
+    return provider, model
 
 
 def _build_payload(body: ChatRequest, model: str) -> dict[str, Any]:
@@ -50,15 +74,21 @@ async def chat(
     username: str = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
 ):
-    client: LiteLLMClient = request.app.state.litellm
-    model = _resolve_model(body.model, settings)
+    registry: ClientRegistry = request.app.state.llm
+    provider, model = _resolve_target(body, settings)
+
+    try:
+        client: LLMClient = registry.get(provider.id)
+    except LLMError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+
     payload = _build_payload(body, model)
-    logger.info("使用者 %s 以模型 %s 發送對話請求", username, model)
+    logger.info("使用者 %s 以 %s 的模型 %s 發送對話請求", username, provider.id, model)
 
     if not body.stream:
         try:
             result = await client.chat_completion(payload)
-        except LiteLLMError as exc:
+        except LLMError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
         return JSONResponse(result)
 

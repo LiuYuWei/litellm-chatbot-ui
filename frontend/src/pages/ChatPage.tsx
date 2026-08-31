@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Menu, Moon, Settings2, Sun, X } from 'lucide-react'
+import { AlertCircle, Menu, Moon, Settings2, Sun, TriangleAlert, X } from 'lucide-react'
 import Composer from '../components/Composer'
 import ConfirmDialog from '../components/ConfirmDialog'
 import MessageList from '../components/MessageList'
@@ -15,7 +15,13 @@ import {
   saveSettings,
 } from '../lib/storage'
 import type { Theme } from '../lib/storage'
-import type { ChatMessage, ChatSettings, Conversation, ModelInfo } from '../lib/types'
+import type {
+  ChatMessage,
+  ChatSettings,
+  Conversation,
+  ModelInfo,
+  ProviderStatus,
+} from '../lib/types'
 import { createId, deriveTitle } from '../lib/utils'
 
 interface ChatPageProps {
@@ -25,6 +31,16 @@ interface ChatPageProps {
 
 type PendingDelete = { type: 'one'; id: string } | { type: 'all' } | null
 
+/**
+ * 模型名稱現在是「來源/模型」的合格名稱。
+ * 舊版存下的裸名稱若只對應到一個來源就補上前綴，否則保持原樣（後端會退回預設來源）。
+ */
+function qualifyStoredModel(model: string, models: ModelInfo[]): string {
+  if (!model || models.some((item) => item.id === model)) return model
+  const matches = models.filter((item) => item.model === model)
+  return matches.length === 1 ? matches[0].id : model
+}
+
 export default function ChatPage({ theme, onToggleTheme }: ChatPageProps) {
   const { session, signOut } = useAuth()
   const token = session?.token ?? ''
@@ -32,6 +48,8 @@ export default function ChatPage({ theme, onToggleTheme }: ChatPageProps) {
   const [conversations, setConversations] = useState<Conversation[]>(() => loadConversations())
   const [activeId, setActiveId] = useState<string | null>(null)
   const [models, setModels] = useState<ModelInfo[]>([])
+  const [providers, setProviders] = useState<ProviderStatus[]>([])
+  const [offlineDismissed, setOfflineDismissed] = useState(false)
   const [currentModel, setCurrentModel] = useState('')
   const [settings, setSettings] = useState<ChatSettings>(() => loadSettings())
   const [input, setInput] = useState('')
@@ -67,7 +85,22 @@ export default function ChatPage({ theme, onToggleTheme }: ChatPageProps) {
       .then((result) => {
         if (cancelled) return
         setModels(result.models)
-        setCurrentModel((current) => current || result.default_model || result.models[0]?.id || '')
+        setProviders(result.providers)
+        setOfflineDismissed(false)
+        setCurrentModel((current) => {
+          const qualified = qualifyStoredModel(current, result.models)
+          return qualified || result.default_model || result.models[0]?.id || ''
+        })
+        setConversations((previous) => {
+          let changed = false
+          const next = previous.map((conversation) => {
+            const qualified = qualifyStoredModel(conversation.model, result.models)
+            if (qualified === conversation.model) return conversation
+            changed = true
+            return { ...conversation, model: qualified }
+          })
+          return changed ? next : previous
+        })
       })
       .catch((err: unknown) => {
         if (cancelled) return
@@ -78,7 +111,7 @@ export default function ChatPage({ theme, onToggleTheme }: ChatPageProps) {
         setError(
           err instanceof Error
             ? `無法取得模型清單：${err.message}`
-            : '無法取得模型清單，請確認 LiteLLM 服務是否正常。',
+            : '無法取得模型清單，請確認模型來源服務是否正常。',
         )
       })
     return () => {
@@ -147,7 +180,8 @@ export default function ChatPage({ theme, onToggleTheme }: ChatPageProps) {
         role: 'assistant',
         content: '',
         createdAt: Date.now(),
-        model,
+        // 訊息上只顯示原生模型名稱，來源前綴留給請求本身使用。
+        model: models.find((item) => item.id === model)?.model ?? model,
       }
 
       setConversations((previous) =>
@@ -222,14 +256,14 @@ export default function ChatPage({ theme, onToggleTheme }: ChatPageProps) {
         setStreamingId(null)
       }
     },
-    [flushPending, patchMessage, settings, signOut, token],
+    [flushPending, models, patchMessage, settings, signOut, token],
   )
 
   const handleSend = useCallback(() => {
     const content = input.trim()
     if (!content || streamingId) return
     if (!currentModel) {
-      setError('尚未選擇模型，請先確認 LiteLLM 是否有可用模型。')
+      setError('尚未選擇模型，請先確認模型來源是否有可用模型。')
       return
     }
 
@@ -325,6 +359,7 @@ export default function ChatPage({ theme, onToggleTheme }: ChatPageProps) {
   )
 
   const messages = activeConversation?.messages ?? []
+  const offlineProviders = providers.filter((provider) => !provider.reachable)
 
   return (
     <div className="flex h-full overflow-hidden bg-slate-50 dark:bg-slate-950">
@@ -383,6 +418,28 @@ export default function ChatPage({ theme, onToggleTheme }: ChatPageProps) {
             {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
           </button>
         </header>
+
+        {offlineProviders.length > 0 && !offlineDismissed && (
+          <div
+            role="status"
+            className="flex items-start gap-2 border-b border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800 sm:px-6 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-300"
+          >
+            <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="flex-1">
+              以下模型來源目前無法連線：
+              {offlineProviders.map((provider) => provider.label).join('、')}
+              。其餘來源仍可正常使用。
+            </span>
+            <button
+              type="button"
+              onClick={() => setOfflineDismissed(true)}
+              className="rounded p-0.5 transition hover:bg-amber-100 dark:hover:bg-amber-900/40"
+              aria-label="關閉提示"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
 
         {error && (
           <div

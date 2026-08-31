@@ -1,4 +1,4 @@
-import type { ChatSettings, ModelInfo, Role } from './types'
+import type { ChatSettings, ModelInfo, ProviderStatus, Role } from './types'
 
 export class ApiError extends Error {
   status: number
@@ -46,9 +46,13 @@ export async function fetchCurrentUser(token: string): Promise<{ username: strin
   return response.json()
 }
 
-export async function fetchModels(
-  token: string,
-): Promise<{ models: ModelInfo[]; default_model: string }> {
+export interface ModelListResult {
+  models: ModelInfo[]
+  default_model: string
+  providers: ProviderStatus[]
+}
+
+export async function fetchModels(token: string): Promise<ModelListResult> {
   const response = await fetch('/api/models', {
     headers: { Authorization: `Bearer ${token}` },
   })
@@ -67,7 +71,7 @@ export interface StreamChatOptions {
 
 /**
  * 呼叫 /api/chat 並解析 SSE 串流。
- * 後端會原封不動轉發 LiteLLM 的 OpenAI 相容 chunk。
+ * model 為「來源/模型」合格名稱，後端據此路由並原封不動轉發 OpenAI 相容 chunk。
  */
 export async function streamChat({
   token,

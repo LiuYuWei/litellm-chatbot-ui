@@ -22,8 +22,22 @@ export interface Conversation {
 }
 
 export interface ModelInfo {
+  /** 合格名稱：來源 id + / + 原生模型名稱 */
   id: string
+  /** 該來源上的原生模型名稱 */
+  model: string
+  provider: string
+  provider_label: string
   owned_by?: string | null
+}
+
+export interface ProviderStatus {
+  id: string
+  label: string
+  base_url: string
+  reachable: boolean
+  model_count: number
+  error?: string | null
 }
 
 export interface ChatSettings {

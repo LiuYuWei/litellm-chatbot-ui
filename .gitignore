@@ -15,7 +15,8 @@ frontend/dist/
 
 # 環境設定（含金鑰，切勿提交）
 .env
-.env.local
+.env.*
+!.env.example
 *.local
 
 # 編輯器與系統檔

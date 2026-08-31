@@ -11,7 +11,7 @@ interface LoginPageProps {
 
 const HIGHLIGHTS = [
   '串流回覆，逐字即時顯示',
-  '可切換 LiteLLM 上的任一模型',
+  '可切換各來源上的任一模型',
   '對話紀錄保存在你的瀏覽器',
 ]
 
@@ -57,8 +57,8 @@ export default function LoginPage({ theme, onToggleTheme }: LoginPageProps) {
             對接你所有的模型。
           </h1>
           <p className="mt-4 max-w-md text-white/80">
-            透過 LiteLLM Proxy 統一存取 OpenAI、Anthropic、Gemini 等供應商，
-            登入後即可直接開始對話。
+            透過 LiteLLM Proxy 與地端 vLLM 統一存取 OpenAI、Anthropic、Gemini
+            等供應商，登入後即可直接開始對話。
           </p>
           <ul className="mt-8 space-y-3">
             {HIGHLIGHTS.map((item) => (

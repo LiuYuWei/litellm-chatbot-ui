@@ -1,13 +1,14 @@
-"""模型清單端點。"""
+"""模型清單端點：彙整所有來源的可用模型。"""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ..auth import get_current_user
+from ..catalog import collect_models, resolve_default_model
 from ..config import Settings, get_settings
-from ..litellm_client import LiteLLMClient, LiteLLMError
-from ..schemas import ModelInfo, ModelListResponse
+from ..llm_client import ClientRegistry
+from ..schemas import ModelListResponse
 
 router = APIRouter(prefix="/api", tags=["models"])
 
@@ -18,30 +19,16 @@ async def list_models(
     _: str = Depends(get_current_user),
     settings: Settings = Depends(get_settings),
 ) -> ModelListResponse:
-    client: LiteLLMClient = request.app.state.litellm
-    allowlist = settings.model_allowlist
+    registry: ClientRegistry = request.app.state.llm
+    models, providers = await collect_models(registry, settings)
 
-    try:
-        raw_models = await client.list_models()
-    except LiteLLMError as exc:
-        if allowlist:
-            # LiteLLM 暫時無法連線時，仍以白名單提供可選模型。
-            return ModelListResponse(
-                models=[ModelInfo(id=m) for m in allowlist],
-                default_model=settings.default_model,
-            )
-        raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
+    if not models and all(not p.reachable for p in providers):
+        # 全部來源都掛了才視為錯誤；只要有一個活著就照常回傳。
+        detail = "；".join(p.error for p in providers if p.error) or "所有模型來源都無法連線。"
+        raise HTTPException(status_code=503, detail=detail)
 
-    models = [
-        ModelInfo(id=item["id"], owned_by=item.get("owned_by")) for item in raw_models
-    ]
-    if allowlist:
-        allowed = set(allowlist)
-        filtered = [m for m in models if m.id in allowed]
-        models = filtered or [ModelInfo(id=m) for m in allowlist]
-
-    default_model = settings.default_model
-    if models and default_model not in {m.id for m in models}:
-        default_model = models[0].id
-
-    return ModelListResponse(models=models, default_model=default_model)
+    return ModelListResponse(
+        models=models,
+        default_model=resolve_default_model(models, settings),
+        providers=providers,
+    )

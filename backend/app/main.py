@@ -12,8 +12,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
+from .catalog import collect_models
 from .config import get_settings
-from .litellm_client import LiteLLMClient, LiteLLMError
+from .llm_client import ClientRegistry
 from .routers import auth as auth_router
 from .routers import chat as chat_router
 from .routers import models as models_router
@@ -29,8 +30,11 @@ logger = logging.getLogger("litellm_chatbot")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    app.state.litellm = LiteLLMClient(settings)
-    logger.info("已啟動，LiteLLM 位址：%s", settings.litellm_url)
+    app.state.llm = ClientRegistry(settings.providers)
+    for provider in settings.providers:
+        logger.info(
+            "已註冊模型來源 %s（%s）：%s", provider.id, provider.label, provider.base_url
+        )
     if settings.jwt_secret == "please-change-this-secret-in-production":
         logger.warning("JWT_SECRET 仍是預設值，正式環境請務必更換！")
     if not settings.users:
@@ -38,13 +42,13 @@ async def lifespan(app: FastAPI):
     try:
         yield
     finally:
-        await app.state.litellm.aclose()
-        logger.info("已關閉 LiteLLM 連線。")
+        await app.state.llm.aclose()
+        logger.info("已關閉所有模型來源連線。")
 
 
 app = FastAPI(
     title=settings.app_name,
-    description="以 LiteLLM 為後端的對話 UI，支援登入驗證與串流回覆。",
+    description="以 OpenAI 相容後端（LiteLLM／vLLM…）為來源的對話 UI，支援多來源、登入驗證與串流回覆。",
     version="1.0.0",
     lifespan=lifespan,
 )
@@ -64,19 +68,9 @@ app.include_router(models_router.router)
 
 @app.get("/api/health", response_model=HealthResponse, tags=["system"])
 async def health(request: Request) -> HealthResponse:
-    """健康檢查，同時回報 LiteLLM 是否可連線。"""
-    reachable: bool | None
-    try:
-        await request.app.state.litellm.list_models()
-        reachable = True
-    except LiteLLMError:
-        reachable = False
-    return HealthResponse(
-        status="ok",
-        app=settings.app_name,
-        litellm_base_url=settings.litellm_url,
-        litellm_reachable=reachable,
-    )
+    """健康檢查，逐一回報各模型來源是否可連線。"""
+    _, providers = await collect_models(request.app.state.llm, settings)
+    return HealthResponse(status="ok", app=settings.app_name, providers=providers)
 
 
 # --- 前端靜態檔案（Docker 映像中由前端建置產物填入）---

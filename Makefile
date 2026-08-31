@@ -41,7 +41,7 @@ env: ## 由 .env.example 建立 .env（已存在則不覆蓋）
 		printf "  .env 已存在，未做任何變更。\n"; \
 	else \
 		cp .env.example .env; \
-		printf "  已建立 .env，請填入 LITELLM_BASE_URL、LITELLM_API_KEY 與 AUTH_USERS。\n"; \
+		printf "  已建立 .env，請填入 LLM_PROVIDERS（或單一來源的 LITELLM_BASE_URL／LITELLM_API_KEY）與 AUTH_USERS。\n"; \
 	fi
 
 secret: ## 產生一組隨機的 JWT_SECRET
