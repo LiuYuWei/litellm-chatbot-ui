@@ -377,7 +377,10 @@ export default function ChatPage({ theme, onToggleTheme }: ChatPageProps) {
       />
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="flex items-center gap-2 border-b border-slate-200 bg-white/80 px-4 py-3 backdrop-blur sm:px-6 dark:border-slate-800 dark:bg-slate-900/80">
+        {/* backdrop-blur 會讓 header 自成 stacking context，若不加 relative z-20，
+            內部的模型下拉選單會被後方（position: relative）的訊息區蓋住而無法點擊。
+            z-20 低於側邊欄的 z-30／z-40 與彈窗的 z-50，不影響它們。 */}
+        <header className="relative z-20 flex items-center gap-2 border-b border-slate-200 bg-white/80 px-4 py-3 backdrop-blur sm:px-6 dark:border-slate-800 dark:bg-slate-900/80">
           <button
             type="button"
             onClick={() => setSidebarOpen(true)}
