@@ -11,7 +11,8 @@ VENV        := .venv
 VENV_PY     := $(VENV)/bin/python
 VENV_PIP    := $(VENV)/bin/pip
 APP_PORT    ?= 8000
-COMPOSE     := docker compose
+# 本機用 docker-compose.local.yaml；docker-compose.yml 是給 Coolify 部署用的
+COMPOSE     := docker compose -f docker-compose.local.yaml
 IMAGE       := litellm-chatbot-ui:latest
 
 # 顏色

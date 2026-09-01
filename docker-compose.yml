@@ -1,22 +1,52 @@
+# Coolify 部署用 docker-compose
+# ─────────────────────────────────────────────────────────────
+# 與本機版(docker-compose.local.yaml)的差異:
+#   1. 不掛 .env、不開 ports —— 所有設定改由 Coolify UI 的環境變數頁注入
+#      (下方列出的 bare 變數會出現在該頁供填寫)
+#   2. 以 Coolify magic 變數 SERVICE_FQDN_CHATBOTUI_8000 自動取得對外網域,
+#      由 Coolify 的反向代理路由到容器的 8000
+#   3. 健康檢查沿用 Dockerfile 內建的 HEALTHCHECK,不在此重複定義
+#
+# 注意:magic 變數的識別名不可含底線(含底線就無法在結尾接埠號),
+#      故用 CHATBOTUI 而非 CHATBOT_UI。識別名不必等於服務名。
+#
+# 部署前請在 Coolify 環境變數頁填入:
+#   LLM_PROVIDERS   多來源設定,單行 JSON 陣列。直接貼 JSON 本身,
+#                   不要再自行加上外層引號。例如:
+#                   [{"id":"ace2","label":"APMIC ACE-2","base_url":"https://...","api_key":"sk-..."}]
+#                   只接一個來源時,可改用下方註解掉的 LITELLM_* 三個變數。
+#   DEFAULT_MODEL   多來源時必須寫成「來源/模型」,例如 ace2/ACE-2-2602
+#   AUTH_USERS      登入帳密,格式 帳號:密碼,多組以逗號分隔
+#   JWT_SECRET      請用 make secret 產生,切勿沿用範例值
+#
+# 對話紀錄只存在使用者瀏覽器的 localStorage,故本服務不需要任何 volume。
+
 services:
   chatbot-ui:
     build:
       context: .
       dockerfile: Dockerfile
-    image: litellm-chatbot-ui:latest
-    container_name: litellm-chatbot-ui
-    ports:
-      - "${APP_PORT:-8000}:8000"
-    env_file:
-      - .env
+    environment:
+      # Coolify magic:自動產生對外 FQDN 並將 proxy 路由到容器 8000
+      - SERVICE_FQDN_CHATBOTUI_8000
+
+      # ---- 模型來源 ----
+      - LLM_PROVIDERS
+      # 只有單一來源時,改用下面三個(並把 LLM_PROVIDERS 留空):
+      #- LITELLM_BASE_URL
+      #- LITELLM_API_KEY
+      #- LITELLM_TIMEOUT
+
+      # ---- 模型 ----
+      - DEFAULT_MODEL
+      - ALLOWED_MODELS
+
+      # ---- 登入 ----
+      - AUTH_USERS
+      - JWT_SECRET
+      - JWT_EXPIRE_MINUTES
+
+      # ---- 伺服器 ----
+      - CORS_ORIGINS
+      - LOG_LEVEL
     restart: unless-stopped
-    healthcheck:
-      test:
-        - CMD
-        - python
-        - -c
-        - "import urllib.request, sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3).status == 200 else 1)"
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10s

@@ -11,9 +11,10 @@ __pycache__
 **/__pycache__
 *.pyc
 .env
-.env.local
+.env.*
 *.log
 .DS_Store
 README.md
 Makefile
-docker-compose.yml
+docker-compose*.yml
+docker-compose*.yaml

@@ -116,6 +116,34 @@ make dev         # 後端 :8000、前端 :5173 同時啟動
 make run         # 建置前端後啟動，統一由 http://localhost:8000 提供
 ```
 
+### 方式三：Coolify 部署
+
+專案內有兩份 compose 檔，用途不同：
+
+| 檔案 | 用途 | 特徵 |
+| --- | --- | --- |
+| `docker-compose.local.yaml` | 本機／自架 Docker | 開 `ports`、掛 `.env`；所有 `make` 指令都走這份 |
+| `docker-compose.yml` | Coolify 部署 | 不開 `ports`、不掛 `.env`；網域與環境變數由 Coolify 提供 |
+
+Coolify 會自動抓取根目錄的 `docker-compose.yml`，步驟：
+
+1. 在 Coolify 新增資源，選 **Docker Compose**，指向此 repo。
+2. 到 **Environment Variables** 頁填入設定，至少要有：
+   `LLM_PROVIDERS`（或單一來源的 `LITELLM_BASE_URL` / `LITELLM_API_KEY`）、
+   `DEFAULT_MODEL`、`AUTH_USERS`、`JWT_SECRET`。
+3. 按下 Deploy，Coolify 會自動配一個網域並把反向代理指向容器的 8000 埠。
+
+幾個要注意的地方：
+
+- **不要自己加 `ports`**。對外網域由 compose 內的 magic 變數
+  `SERVICE_FQDN_CHATBOTUI_8000` 產生，Coolify 的反向代理會處理 TLS 與路由；
+  自行開 port 會繞過代理。
+- **貼 `LLM_PROVIDERS` 時直接貼 JSON 本身**，不要再自行加上外層引號，
+  否則會變成字串而解析失敗。
+- magic 變數的識別名不可含底線（含底線就無法在結尾接埠號），所以是
+  `CHATBOTUI` 而非 `CHATBOT_UI`。識別名不需要等於服務名。
+- 本服務不需要任何 volume，對話紀錄只存在使用者瀏覽器的 `localStorage`。
+
 ---
 
 ## 環境變數說明
@@ -279,7 +307,8 @@ litellm-chatbot-ui/
 │       ├── context/            # 登入狀態管理
 │       └── lib/                # API 呼叫、本機儲存、工具函式
 ├── Dockerfile                  # 多階段建置：Node 建前端 → Python 執行
-├── docker-compose.yml
+├── docker-compose.yml          # Coolify 部署用（無 ports，走 SERVICE_FQDN）
+├── docker-compose.local.yaml   # 本機用（開 ports、掛 .env）；make 指令走這份
 ├── Makefile
 └── .env.example
 ```
