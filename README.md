@@ -131,17 +131,60 @@ Coolify 會自動抓取根目錄的 `docker-compose.yml`，步驟：
 2. 到 **Environment Variables** 頁填入設定，至少要有：
    `LLM_PROVIDERS`（或單一來源的 `LITELLM_BASE_URL` / `LITELLM_API_KEY`）、
    `DEFAULT_MODEL`、`AUTH_USERS`、`JWT_SECRET`。
-3. 按下 Deploy，Coolify 會自動配一個網域並把反向代理指向容器的 8000 埠。
+3. 到該服務的 **Domains** 設定填入對外網域，例如 `https://chatbot.example.com`。
+4. 按下 Deploy。
 
-幾個要注意的地方：
+#### 網域與埠的分工
 
-- **不要自己加 `ports`**。對外網域由 compose 內的 magic 變數
-  `SERVICE_FQDN_CHATBOTUI_8000` 產生，Coolify 的反向代理會處理 TLS 與路由；
-  自行開 port 會繞過代理。
+這是最容易踩坑的地方，兩者的設定位置**不同**：
+
+| 項目 | 設定在哪 | 說明 |
+| --- | --- | --- |
+| 對外網域 | Coolify UI 的 **Domains** 對話框 | Coolify 據此產生 Traefik 路由並處理 TLS |
+| proxy 目標埠 | `docker-compose.yml` 的 `expose` | Coolify 以 compose 檔為**唯一真實來源** |
+
+Domains 對話框裡的 **Port 欄位只能從 compose 宣告過的埠去選，不能憑空填**。
+所以 compose 裡的這段是必要的，拿掉會壞：
+
+```yaml
+services:
+  chatbot-ui:
+    expose:
+      - "8000"
+```
+
+#### 排錯
+
+網域打不開時，先看 HTTP 狀態碼，它能直接指出問題在哪一層：
+
+| 狀態碼 | 意義 | 處理方向 |
+| --- | --- | --- |
+| **502** | Traefik 有路由，但連不到容器 | 多半是埠沒設定。確認 compose 有 `expose`，且 Domains 的 Port 欄位是 8000 |
+| **404** | Traefik 根本沒有這個網域的路由 | Domains 設定沒生效，或網域拼錯 |
+| **521～525** | Cloudflare 連不到來源主機 | 主機或 Traefik 沒在跑，與本專案無關 |
+| **526** | Cloudflare 到 Traefik 的 TLS 失敗 | 把 Cloudflare SSL mode 調成 Full |
+
+若容器日誌裡**只有 `127.0.0.1` 的請求**（那是容器內建 `HEALTHCHECK` 自己打自己）、
+完全沒有外部請求進來，就代表流量根本沒走到應用，問題在 proxy 層而不是程式。
+
+在 Coolify 主機上可以直接讀出 Traefik 實際收到的埠：
+
+```bash
+docker inspect <容器名> --format '{{json .Config.Labels}}' | tr ',' '\n' | grep traefik
+```
+
+看 `traefik.http.services.….loadbalancer.server.port`，不是 `8000` 就是埠設錯了。
+
+#### 其他注意事項
+
+- **不要自己加 `ports:`**。那會把服務綁上主機埠、繞過 Coolify 的 proxy，反而更難查。
+  `expose` 只是宣告容器監聽哪個埠，不會對外開放。
 - **貼 `LLM_PROVIDERS` 時直接貼 JSON 本身**，不要再自行加上外層引號，
   否則會變成字串而解析失敗。
-- magic 變數的識別名不可含底線（含底線就無法在結尾接埠號），所以是
-  `CHATBOTUI` 而非 `CHATBOT_UI`。識別名不需要等於服務名。
+- 也可以改用 `SERVICE_FQDN_<識別名>_8000` magic 變數讓 Coolify 自動配網域，
+  但前提是該 Coolify 實例的 **Wildcard Domain 在 DNS 上真的存在**。若不存在，
+  自動配出來的會是死網域，而且會和 UI 手動設的網域形成兩個互不同步的來源。
+  識別名不可含底線（含底線就無法在結尾接埠號），但不需要等於服務名。
 - 本服務不需要任何 volume，對話紀錄只存在使用者瀏覽器的 `localStorage`。
 
 ---
@@ -171,6 +214,8 @@ Coolify 會自動抓取根目錄的 `docker-compose.yml`，步驟：
 | `api_key` | | 該來源的 API Key，未啟用驗證可留空 |
 | `timeout` | | 逾時秒數，預設 `120` |
 | `allowed_models` | | 該來源的模型白名單（字串陣列），留空代表採用該來源 `/v1/models` 的完整清單 |
+| `default_temperature` | | 該來源的預設 temperature（0～2），留空則用全域 `DEFAULT_TEMPERATURE` |
+| `model_temperatures` | | 針對個別模型覆寫 temperature，鍵為該來源上的**原生**模型名稱 |
 
 ### 模型
 
@@ -178,8 +223,41 @@ Coolify 會自動抓取根目錄的 `docker-compose.yml`，步驟：
 | --- | --- | --- |
 | `DEFAULT_MODEL` | `gpt-4o-mini` | 預設模型。多來源時請填 `來源/模型`，例如 `vllm/meta-llama/Llama-3.1-8B-Instruct` |
 | `ALLOWED_MODELS` | 空 | 全域模型白名單（逗號分隔），可寫 `來源/模型` 或裸模型名稱；留空代表不額外過濾 |
+| `DEFAULT_TEMPERATURE` | `0.7` | 全域預設 temperature（0～2）。來源與模型都沒指定時採用 |
 
 > **模型名稱規則**：多來源時同名模型可能同時存在於不同來源，因此 API 對外一律使用 `來源/模型` 的合格名稱（例如 `vllm/meta-llama/Llama-3.1-8B-Instruct`）。前綴只用來決定路由，實際送給後端的仍是原生模型名稱。UI 上只顯示原生名稱，來源以分組標題呈現。
+
+### 每個來源／模型的 temperature
+
+不同模型適合的隨機性往往不同（例如金融場景要低、創意寫作要高）。temperature 的預設值採三層優先序，**由細到粗**：
+
+```
+模型層級（model_temperatures）  >  來源層級（default_temperature）  >  全域（DEFAULT_TEMPERATURE）
+```
+
+設定範例：
+
+```bash
+LLM_PROVIDERS=[{"id":"tcb","label":"TCB Model","base_url":"https://...","api_key":"sk-...","default_temperature":0.1},{"id":"ace2","label":"APMIC","base_url":"https://...","api_key":"sk-...","default_temperature":0.7,"model_temperatures":{"ACE-2-2602":0.3,"gemma-4-31B-it":1.0}}]
+DEFAULT_TEMPERATURE=0.7
+```
+
+上面這組設定的結果：
+
+| 模型 | 生效的 temperature | 來自 |
+| --- | --- | --- |
+| `tcb/ACE-3-Bank-TCB-preview` | `0.1` | 來源層級 |
+| `ace2/ACE-2-2602` | `0.3` | 模型層級 |
+| `ace2/gemma-4-31B-it` | `1.0` | 模型層級 |
+| `ace2/` 其他模型 | `0.7` | 來源層級 |
+
+這些都只是**預設值**，使用者仍可在對話設定面板自行調整：
+
+- 切換模型時，滑桿會自動回到該模型的預設值
+- 使用者拉動滑桿後即為自訂值，會一直沿用到下次切換模型
+- 面板上有「跟隨模型預設」按鈕可隨時回到預設狀態
+
+`model_temperatures` 的鍵要寫**原生**模型名稱（不含來源前綴），例如 `ACE-2-2602` 而不是 `ace2/ACE-2-2602`。
 
 ### 登入
 
@@ -307,7 +385,7 @@ litellm-chatbot-ui/
 │       ├── context/            # 登入狀態管理
 │       └── lib/                # API 呼叫、本機儲存、工具函式
 ├── Dockerfile                  # 多階段建置：Node 建前端 → Python 執行
-├── docker-compose.yml          # Coolify 部署用（無 ports，走 SERVICE_FQDN）
+├── docker-compose.yml          # Coolify 部署用（無 ports，以 expose 宣告埠）
 ├── docker-compose.local.yaml   # 本機用（開 ports、掛 .env）；make 指令走這份
 ├── Makefile
 └── .env.example

@@ -29,6 +29,8 @@ export interface ModelInfo {
   provider: string
   provider_label: string
   owned_by?: string | null
+  /** 此模型的預設 temperature（模型 > 來源 > 全域） */
+  temperature: number
 }
 
 export interface ProviderStatus {
@@ -42,7 +44,8 @@ export interface ProviderStatus {
 
 export interface ChatSettings {
   systemPrompt: string
-  temperature: number
+  /** null 代表跟隨目前模型的預設值；數字代表使用者自行覆寫 */
+  temperature: number | null
   maxTokens: number | null
 }
 

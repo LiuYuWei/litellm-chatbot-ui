@@ -34,7 +34,8 @@ class ChatRequest(BaseModel):
     model: str | None = None
     # 明確指定模型來源；留空時由 model 的前綴推斷
     provider: str | None = None
-    temperature: float = Field(default=0.7, ge=0.0, le=2.0)
+    # 留空代表採用該模型的預設 temperature（模型 > 來源 > 全域）
+    temperature: float | None = Field(default=None, ge=0.0, le=2.0)
     max_tokens: int | None = Field(default=None, ge=1, le=32768)
     stream: bool = True
 
@@ -47,6 +48,8 @@ class ModelInfo(BaseModel):
     provider: str
     provider_label: str
     owned_by: str | None = None
+    # 此模型的預設 temperature，供前端在切換模型時帶入滑桿
+    temperature: float = 0.7
 
 
 class ProviderStatus(BaseModel):

@@ -57,6 +57,9 @@ async def collect_models(
                     model=native,
                     provider=provider.id,
                     provider_label=provider.label,
+                    temperature=provider.temperature_for(
+                        native, settings.default_temperature
+                    ),
                 )
                 for native in _fallback_models(provider, global_allow)
             )
@@ -85,6 +88,9 @@ async def collect_models(
                     provider=provider.id,
                     provider_label=provider.label,
                     owned_by=item.get("owned_by"),
+                    temperature=provider.temperature_for(
+                        native, settings.default_temperature
+                    ),
                 )
             )
             count += 1

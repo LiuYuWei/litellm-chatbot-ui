@@ -124,6 +124,13 @@ export default function ChatPage({ theme, onToggleTheme }: ChatPageProps) {
     if (activeConversation?.model) setCurrentModel(activeConversation.model)
   }, [activeConversation?.id, activeConversation?.model])
 
+  // 換模型就把 temperature 的自訂值清掉，回到跟隨該模型預設值的狀態。
+  useEffect(() => {
+    setSettings((previous) =>
+      previous.temperature === null ? previous : { ...previous, temperature: null },
+    )
+  }, [currentModel])
+
   // 離開頁面前中止串流。
   useEffect(() => {
     return () => {
@@ -360,6 +367,7 @@ export default function ChatPage({ theme, onToggleTheme }: ChatPageProps) {
 
   const messages = activeConversation?.messages ?? []
   const offlineProviders = providers.filter((provider) => !provider.reachable)
+  const selectedModel = models.find((model) => model.id === currentModel)
 
   return (
     <div className="flex h-full overflow-hidden bg-slate-50 dark:bg-slate-950">
@@ -481,6 +489,8 @@ export default function ChatPage({ theme, onToggleTheme }: ChatPageProps) {
       <SettingsPanel
         open={settingsOpen}
         settings={settings}
+        defaultTemperature={selectedModel?.temperature ?? 0.7}
+        modelLabel={selectedModel?.model}
         onClose={() => setSettingsOpen(false)}
         onSave={setSettings}
       />

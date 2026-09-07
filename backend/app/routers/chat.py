@@ -56,11 +56,11 @@ def _resolve_target(
     return provider, model
 
 
-def _build_payload(body: ChatRequest, model: str) -> dict[str, Any]:
+def _build_payload(body: ChatRequest, model: str, temperature: float) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": model,
         "messages": [m.model_dump() for m in body.messages],
-        "temperature": body.temperature,
+        "temperature": temperature,
     }
     if body.max_tokens:
         payload["max_tokens"] = body.max_tokens
@@ -82,8 +82,17 @@ async def chat(
     except LLMError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.message) from exc
 
-    payload = _build_payload(body, model)
-    logger.info("使用者 %s 以 %s 的模型 %s 發送對話請求", username, provider.id, model)
+    # 使用者沒指定時，採用該模型的預設值（模型 > 來源 > 全域）。
+    temperature = (
+        body.temperature
+        if body.temperature is not None
+        else provider.temperature_for(model, settings.default_temperature)
+    )
+    payload = _build_payload(body, model, temperature)
+    logger.info(
+        "使用者 %s 以 %s 的模型 %s（temperature=%s）發送對話請求",
+        username, provider.id, model, temperature,
+    )
 
     if not body.stream:
         try:

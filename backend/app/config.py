@@ -12,6 +12,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 # 來源 id 用於組成「來源/模型」的合格模型名稱，因此不允許斜線與空白。
 PROVIDER_ID_PATTERN = re.compile(r"^[A-Za-z0-9._-]+$")
 
+TEMPERATURE_MIN, TEMPERATURE_MAX = 0.0, 2.0
+
+
+def _check_temperature(value: float, where: str) -> float:
+    if not TEMPERATURE_MIN <= value <= TEMPERATURE_MAX:
+        raise ValueError(
+            f"{where} 的 temperature {value} 超出範圍，必須介於 "
+            f"{TEMPERATURE_MIN} 與 {TEMPERATURE_MAX} 之間。"
+        )
+    return value
+
 
 class ProviderConfig(BaseModel):
     """一個 OpenAI 相容的模型來源（LiteLLM Proxy、vLLM、Ollama…皆適用）。"""
@@ -23,6 +34,10 @@ class ProviderConfig(BaseModel):
     timeout: float = 120.0
     # 此來源的模型白名單；留空代表採用該來源 /v1/models 回傳的全部模型。
     allowed_models: list[str] = Field(default_factory=list)
+    # 此來源的預設 temperature；留空則採用全域 DEFAULT_TEMPERATURE。
+    default_temperature: float | None = None
+    # 針對個別模型覆寫 temperature，鍵為該來源上的「原生」模型名稱（不含來源前綴）。
+    model_temperatures: dict[str, float] = Field(default_factory=dict)
 
     @field_validator("id")
     @classmethod
@@ -42,9 +57,28 @@ class ProviderConfig(BaseModel):
             raise ValueError("來源的 base_url 不可為空。")
         return value
 
+    @field_validator("default_temperature")
+    @classmethod
+    def _validate_default_temperature(cls, value: float | None) -> float | None:
+        return None if value is None else _check_temperature(value, "來源")
+
+    @field_validator("model_temperatures")
+    @classmethod
+    def _validate_model_temperatures(cls, value: dict[str, float]) -> dict[str, float]:
+        return {k: _check_temperature(v, f"模型「{k}」") for k, v in value.items()}
+
     def model_post_init(self, __context: object) -> None:
         if not self.label:
             self.label = self.id
+
+    def temperature_for(self, model_id: str, fallback: float) -> float:
+        """決定某個模型該用的 temperature：模型層級 > 來源層級 > 全域預設。"""
+        override = self.model_temperatures.get(model_id)
+        if override is not None:
+            return override
+        if self.default_temperature is not None:
+            return self.default_temperature
+        return fallback
 
     def qualify(self, model_id: str) -> str:
         """把來源的原生模型名稱轉成全域唯一的合格名稱。"""
@@ -73,6 +107,8 @@ class Settings(BaseSettings):
     default_model: str = "gpt-4o-mini"
     # 全域白名單，以逗號分隔；留空代表不額外過濾
     allowed_models: str = ""
+    # 全域預設 temperature；來源與模型都沒指定時採用
+    default_temperature: float = 0.7
 
     # --- 登入驗證（環境變數固定帳密）---
     # 格式：user1:password1,user2:password2
@@ -86,6 +122,11 @@ class Settings(BaseSettings):
     cors_origins: str = "*"
     static_dir: str = "static"
     log_level: str = "info"
+
+    @field_validator("default_temperature")
+    @classmethod
+    def _validate_default_temperature(cls, value: float) -> float:
+        return _check_temperature(value, "DEFAULT_TEMPERATURE")
 
     @property
     def users(self) -> dict[str, str]:

@@ -6,11 +6,22 @@ import type { ChatSettings } from '../lib/types'
 interface SettingsPanelProps {
   open: boolean
   settings: ChatSettings
+  /** 目前所選模型的預設 temperature，供「跟隨預設」時顯示 */
+  defaultTemperature: number
+  /** 目前所選模型的顯示名稱，用於說明預設值來自哪個模型 */
+  modelLabel?: string
   onClose: () => void
   onSave: (settings: ChatSettings) => void
 }
 
-export default function SettingsPanel({ open, settings, onClose, onSave }: SettingsPanelProps) {
+export default function SettingsPanel({
+  open,
+  settings,
+  defaultTemperature,
+  modelLabel,
+  onClose,
+  onSave,
+}: SettingsPanelProps) {
   const [draft, setDraft] = useState<ChatSettings>(settings)
 
   useEffect(() => {
@@ -25,6 +36,10 @@ export default function SettingsPanel({ open, settings, onClose, onSave }: Setti
     document.addEventListener('keydown', handleKeydown)
     return () => document.removeEventListener('keydown', handleKeydown)
   }, [open, onClose])
+
+  // temperature 為 null 時代表跟隨模型預設值。
+  const isOverridden = draft.temperature !== null
+  const effectiveTemperature = draft.temperature ?? defaultTemperature
 
   if (!open) return null
 
@@ -73,9 +88,20 @@ export default function SettingsPanel({ open, settings, onClose, onSave }: Setti
               <label htmlFor="temperature" className="text-sm font-medium">
                 隨機性（Temperature）
               </label>
-              <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs dark:bg-slate-800">
-                {draft.temperature.toFixed(2)}
-              </span>
+              <div className="flex items-center gap-2">
+                {isOverridden && (
+                  <button
+                    type="button"
+                    onClick={() => setDraft({ ...draft, temperature: null })}
+                    className="rounded-md px-1.5 py-0.5 text-xs text-brand-600 transition hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-900/30"
+                  >
+                    跟隨模型預設
+                  </button>
+                )}
+                <span className="rounded-md bg-slate-100 px-2 py-0.5 font-mono text-xs dark:bg-slate-800">
+                  {effectiveTemperature.toFixed(2)}
+                </span>
+              </div>
             </div>
             <input
               id="temperature"
@@ -83,7 +109,7 @@ export default function SettingsPanel({ open, settings, onClose, onSave }: Setti
               min={0}
               max={2}
               step={0.05}
-              value={draft.temperature}
+              value={effectiveTemperature}
               onChange={(event) => setDraft({ ...draft, temperature: Number(event.target.value) })}
               className="w-full accent-brand-600"
             />
@@ -91,6 +117,11 @@ export default function SettingsPanel({ open, settings, onClose, onSave }: Setti
               <span>0：精準穩定</span>
               <span>2：發散創意</span>
             </div>
+            <p className="mt-1.5 text-xs text-slate-400">
+              {isOverridden
+                ? '已自行調整。切換模型時會回到該模型的預設值。'
+                : `跟隨${modelLabel ? `「${modelLabel}」` : '模型'}的預設值 ${defaultTemperature.toFixed(2)}。`}
+            </p>
           </div>
 
           <div>

@@ -9,7 +9,8 @@ const KEYS = {
 
 export const DEFAULT_SETTINGS: ChatSettings = {
   systemPrompt: '你是一位樂於助人的 AI 助理，請用繁體中文清楚地回答問題。',
-  temperature: 0.7,
+  // null = 跟隨模型預設值
+  temperature: null,
   maxTokens: null,
 }
 

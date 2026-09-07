@@ -84,7 +84,8 @@ export async function streamChat({
   const payload = {
     model,
     messages,
-    temperature: settings.temperature,
+    // 留空時交由後端套用該模型的預設值
+    temperature: settings.temperature ?? undefined,
     max_tokens: settings.maxTokens ?? undefined,
     stream: true,
   }

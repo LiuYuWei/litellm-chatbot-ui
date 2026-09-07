@@ -3,17 +3,24 @@
 # 與本機版(docker-compose.local.yaml)的差異:
 #   1. 不掛 .env、不開 ports —— 所有設定改由 Coolify UI 的環境變數頁注入
 #      (下方列出的 bare 變數會出現在該頁供填寫)
-#   2. 以 Coolify magic 變數 SERVICE_FQDN_CHATBOTUI_8000 自動取得對外網域,
-#      由 Coolify 的反向代理路由到容器的 8000
+#   2. 不用 SERVICE_FQDN_* magic 變數 —— 對外網域改在 Coolify UI 的
+#      Domains 設定,proxy 目標埠則由本檔的 expose 提供(說明見下)
 #   3. 健康檢查沿用 Dockerfile 內建的 HEALTHCHECK,不在此重複定義
 #
-# 注意:magic 變數的識別名不可含底線(含底線就無法在結尾接埠號),故用 CHATBOTUI。
-#      識別名不需要等於服務名,服務叫 chatbot-ui 也能正確產生 SERVICE_FQDN_CHATBOTUI。
+# 網域與埠的分工(踩過坑,務必照這樣設):
+#   * 網域 —— 在 Coolify 該服務的 Domains 對話框填,例如
+#              https://litellm-chatbot-tcb.example.com
+#   * 埠   —— 由本檔的 expose 決定。Coolify 以 compose 檔為唯一真實來源,
+#              Domains 對話框的 Port 欄位只能從 compose 宣告過的埠去選,
+#              不能憑空填。compose 若沒有 expose(也沒有 ports),該欄位會是
+#              空的且無法編輯,Traefik 就只有路由、不知道要連哪個埠,結果是
+#              網域回 502(不是 404 —— 404 代表連路由都沒有,是另一種問題)。
 #
-# Coolify 會把結尾的 _8000 當成 proxy 目標埠寫進 Traefik label,
-# 並把網域存成環境變數 SERVICE_FQDN_CHATBOTUI。若該值是 Coolify 用實例的
-# Wildcard Domain 自動產生的,務必確認那個網域在 DNS 上真的存在,
-# 否則 Traefik 只會替那個不存在的網域建路由,你實際用的網域就會 502。
+#   不要改用 ports: 來宣告。那會把服務綁上主機埠、繞過 Coolify 的 proxy。
+#
+#   也可以改用 SERVICE_FQDN_<識別名>_8000 magic 變數讓 Coolify 自動配網域,
+#   但前提是該實例的 Wildcard Domain 在 DNS 上真的存在;若不存在,自動配出來
+#   的是死網域,而且會和 UI 手動設的網域變成兩個互不同步的來源。
 #
 # 部署前請在 Coolify 環境變數頁填入:
 #   LLM_PROVIDERS   多來源設定,單行 JSON 陣列。直接貼 JSON 本身,
@@ -31,7 +38,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    # 明確宣告容器監聽的埠,讓 Coolify／Traefik 能正確判斷要轉送到 8000
     expose:
       - "8000"
     environment:
@@ -45,6 +51,8 @@ services:
       # ---- 模型 ----
       - DEFAULT_MODEL
       - ALLOWED_MODELS
+      # 全域預設 temperature；各來源可在 LLM_PROVIDERS 內自行覆寫
+      - DEFAULT_TEMPERATURE
 
       # ---- 登入 ----
       - AUTH_USERS
