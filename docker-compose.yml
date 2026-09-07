@@ -35,9 +35,6 @@ services:
     expose:
       - "8000"
     environment:
-      # Coolify magic:自動產生對外 FQDN 並將 proxy 路由到容器 8000
-      - SERVICE_FQDN_CHATBOTUI_8000
-
       # ---- 模型來源 ----
       - LLM_PROVIDERS
       # 只有單一來源時,改用下面三個(並把 LLM_PROVIDERS 留空):
