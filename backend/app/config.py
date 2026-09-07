@@ -6,7 +6,7 @@ import json
 import re
 from functools import cached_property, lru_cache
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # 來源 id 用於組成「來源/模型」的合格模型名稱，因此不允許斜線與空白。
@@ -122,6 +122,20 @@ class Settings(BaseSettings):
     cors_origins: str = "*"
     static_dir: str = "static"
     log_level: str = "info"
+
+    @field_validator(
+        "litellm_timeout", "jwt_expire_minutes", "default_temperature", mode="before"
+    )
+    @classmethod
+    def _blank_numeric_to_default(cls, value: object, info: ValidationInfo) -> object:
+        """空字串視為未設定，改用預設值。
+
+        Coolify 之類的平台會把 compose 裡宣告過、但使用者沒填值的環境變數
+        以空字串注入；若不處理，數值型欄位會在啟動時解析失敗導致整個服務起不來。
+        """
+        if isinstance(value, str) and not value.strip():
+            return cls.model_fields[info.field_name].default
+        return value
 
     @field_validator("default_temperature")
     @classmethod
