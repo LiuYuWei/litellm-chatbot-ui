@@ -7,8 +7,13 @@
 #      由 Coolify 的反向代理路由到容器的 8000
 #   3. 健康檢查沿用 Dockerfile 內建的 HEALTHCHECK,不在此重複定義
 #
-# 注意:magic 變數的識別名不可含底線(含底線就無法在結尾接埠號),
-#      故用 CHATBOTUI 而非 CHATBOT_UI。識別名不必等於服務名。
+# 注意:magic 變數的識別名不可含底線(含底線就無法在結尾接埠號),故用 CHATBOTUI。
+#      識別名不需要等於服務名,服務叫 chatbot-ui 也能正確產生 SERVICE_FQDN_CHATBOTUI。
+#
+# Coolify 會把結尾的 _8000 當成 proxy 目標埠寫進 Traefik label,
+# 並把網域存成環境變數 SERVICE_FQDN_CHATBOTUI。若該值是 Coolify 用實例的
+# Wildcard Domain 自動產生的,務必確認那個網域在 DNS 上真的存在,
+# 否則 Traefik 只會替那個不存在的網域建路由,你實際用的網域就會 502。
 #
 # 部署前請在 Coolify 環境變數頁填入:
 #   LLM_PROVIDERS   多來源設定,單行 JSON 陣列。直接貼 JSON 本身,
@@ -26,6 +31,9 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    # 明確宣告容器監聽的埠,讓 Coolify／Traefik 能正確判斷要轉送到 8000
+    expose:
+      - "8000"
     environment:
       # Coolify magic:自動產生對外 FQDN 並將 proxy 路由到容器 8000
       - SERVICE_FQDN_CHATBOTUI_8000
